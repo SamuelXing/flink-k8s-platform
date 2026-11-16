@@ -1,0 +1,57 @@
+# Defaults shared by every environment. Anything that differs between a laptop
+# and EKS lives in values-local.yaml or values-prod.yaml, never here.
+
+image:
+  repository: flink-sql-platform
+  tag: dev
+  pullPolicy: IfNotPresent
+
+# Which file under sql/ this release runs. Install the chart twice with two
+# different values here to get the generator and the pipeline as separate jobs.
+sqlFile: pipeline.sql
+
+flink:
+  version: v1_20
+  parallelism: 2
+  slotsPerTaskManager: 2
+  checkpointInterval: 30s
+  stateBackend: rocksdb
+  incrementalCheckpoints: true
+  # savepoint: every parallelism change is a stop-and-restore, and this is what
+  # makes the operator take a savepoint first instead of losing state.
+  upgradeMode: savepoint
+
+checkpoints:
+  bucket: flink-checkpoints
+  prefix: jobs
+  # Local only: point the S3 client somewhere other than real AWS.
+  endpoint: ""
+  pathStyleAccess: false
+  # Local only: static keys. In EKS this stays empty and IRSA supplies
+  # credentials through the pod's web identity token.
+  accessKey: ""
+  secretKey: ""
+
+serviceAccount:
+  create: true
+  name: flink
+  # Prod sets eks.amazonaws.com/role-arn here. That annotation is the whole of
+  # IRSA from the workload's side.
+  annotations: {}
+
+kafka:
+  bootstrap: ""
+  topics:
+    orders: orders
+    revenue: revenue_1m
+
+generator:
+  rowsPerSecond: 50
+
+resources:
+  jobManager:
+    memory: 1600m
+    cpu: 1
+  taskManager:
+    memory: 2048m
+    cpu: 1

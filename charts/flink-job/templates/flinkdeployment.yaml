@@ -1,0 +1,89 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: {{ include "flink-job.fullname" . }}
+  labels:
+    {{- include "flink-job.labels" . | nindent 4 }}
+spec:
+  image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  flinkVersion: {{ .Values.flink.version }}
+  serviceAccount: {{ include "flink-job.serviceAccountName" . }}
+
+  flinkConfiguration:
+    taskmanager.numberOfTaskSlots: {{ .Values.flink.slotsPerTaskManager | quote }}
+
+    # ---- state ----------------------------------------------------------
+    # rocksdb keeps state on local disk instead of the heap, which is what
+    # makes hundreds of GB possible. incremental means a checkpoint uploads
+    # only the SST files that changed, not the whole state every time.
+    state.backend.type: {{ .Values.flink.stateBackend | quote }}
+    state.backend.incremental: {{ .Values.flink.incrementalCheckpoints | quote }}
+
+    # ---- checkpointing --------------------------------------------------
+    execution.checkpointing.interval: {{ .Values.flink.checkpointInterval | quote }}
+    execution.checkpointing.dir: {{ include "flink-job.s3Base" . }}/checkpoints
+    execution.checkpointing.savepoint-dir: {{ include "flink-job.s3Base" . }}/savepoints
+    execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+    # Alignment is free while there is headroom and ruinous under backpressure.
+    # This says: try to align, and if it takes longer than 30s, switch that
+    # checkpoint to unaligned and record the in-flight buffers instead.
+    execution.checkpointing.aligned-checkpoint-timeout: "30s"
+
+    # ---- HA -------------------------------------------------------------
+    # Leader election lives in a ConfigMap. No ZooKeeper on Kubernetes.
+    high-availability.type: kubernetes
+    high-availability.storageDir: {{ include "flink-job.s3Base" . }}/ha
+
+    # ---- S3 -------------------------------------------------------------
+    {{- if .Values.checkpoints.endpoint }}
+    # Local only. In EKS these three lines are absent and the credential chain
+    # picks up the IRSA web identity token by itself.
+    s3.endpoint: {{ .Values.checkpoints.endpoint | quote }}
+    s3.path.style.access: {{ .Values.checkpoints.pathStyleAccess | quote }}
+    {{- end }}
+    {{- if .Values.checkpoints.accessKey }}
+    s3.access-key: {{ .Values.checkpoints.accessKey | quote }}
+    s3.secret-key: {{ .Values.checkpoints.secretKey | quote }}
+    {{- end }}
+
+    # ---- rescaling ------------------------------------------------------
+    # 128 is the default and it is the job's lifetime parallelism ceiling: it
+    # cannot be changed without throwing away every existing savepoint.
+    pipeline.max-parallelism: "720"
+
+  podTemplate:
+    metadata:
+      annotations:
+        # Rolls the job when the SQL changes, which a ConfigMap edit alone
+        # would not do.
+        checksum/sql: {{ include (print $.Template.BasePath "/configmap-sql.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: flink-main-container
+          volumeMounts:
+            - name: sql
+              mountPath: /opt/flink/sql
+              readOnly: true
+      volumes:
+        - name: sql
+          configMap:
+            name: {{ include "flink-job.fullname" . }}-sql
+
+  jobManager:
+    resource:
+      memory: {{ .Values.resources.jobManager.memory | quote }}
+      cpu: {{ .Values.resources.jobManager.cpu }}
+
+  taskManager:
+    resource:
+      memory: {{ .Values.resources.taskManager.memory | quote }}
+      cpu: {{ .Values.resources.taskManager.cpu }}
+
+  job:
+    jarURI: local:///opt/flink/usrlib/flink-sql-runner.jar
+    args:
+      - /opt/flink/sql/{{ .Values.sqlFile }}
+    parallelism: {{ .Values.flink.parallelism }}
+    upgradeMode: {{ .Values.flink.upgradeMode }}
+    state: running

@@ -1,0 +1,111 @@
+# -*- mode: Python -*-
+#
+# One command brings up the whole local stack:
+#
+#     make local-up      # creates the kind cluster, then runs `tilt up`
+#
+# Layers, in dependency order:
+#     cert-manager      (the Flink operator's webhook needs it)
+#     Strimzi operator  -> Kafka cluster
+#     LocalStack        -> checkpoint bucket
+#     Flink operator    -> generator job, pipeline job
+#
+load('ext://helm_resource', 'helm_resource', 'helm_repo')
+load('ext://namespace', 'namespace_create')
+
+NS = 'flink-platform'
+
+allow_k8s_contexts('kind-flink-platform')
+
+# ---- image ---------------------------------------------------------------
+# Tilt rebuilds and reloads into kind on every change under app/.
+docker_build(
+    'flink-sql-platform',
+    context='../app',
+    dockerfile='../app/Dockerfile',
+    only=['pom.xml', 'src', 'Dockerfile'],
+)
+
+# ---- namespace -----------------------------------------------------------
+k8s_yaml('manifests/00-namespace.yaml')
+
+# ---- cert-manager --------------------------------------------------------
+helm_repo('jetstack', 'https://charts.jetstack.io', labels=['repos'])
+helm_resource(
+    'cert-manager',
+    'jetstack/cert-manager',
+    namespace='cert-manager',
+    flags=['--create-namespace', '--version=v1.16.2', '--set=crds.enabled=true'],
+    resource_deps=['jetstack'],
+    labels=['platform'],
+)
+
+# ---- Strimzi + Kafka -----------------------------------------------------
+helm_repo('strimzi', 'https://strimzi.io/charts/', labels=['repos'])
+helm_resource(
+    'strimzi-operator',
+    'strimzi/strimzi-kafka-operator',
+    namespace=NS,
+    flags=['--version=0.45.0', '--set=watchNamespaces={%s}' % NS],
+    resource_deps=['strimzi'],
+    labels=['platform'],
+)
+k8s_yaml('manifests/20-kafka.yaml')
+k8s_resource(
+    new_name='kafka',
+    objects=['dual-role:kafkanodepool', 'kafka:kafka', 'orders:kafkatopic', 'revenue-1m:kafkatopic'],
+    resource_deps=['strimzi-operator'],
+    labels=['data'],
+)
+
+# ---- LocalStack ----------------------------------------------------------
+k8s_yaml('manifests/10-localstack.yaml')
+k8s_resource('localstack', port_forwards=['4566:4566'], labels=['data'])
+k8s_resource(
+    'create-checkpoint-bucket',
+    resource_deps=['localstack'],
+    labels=['data'],
+)
+
+# ---- Flink operator ------------------------------------------------------
+helm_repo(
+    'flink-operator',
+    'https://downloads.apache.org/flink/flink-kubernetes-operator-1.10.0/',
+    labels=['repos'],
+)
+helm_resource(
+    'flink-kubernetes-operator',
+    'flink-operator/flink-kubernetes-operator',
+    namespace=NS,
+    flags=['--version=1.10.0'],
+    resource_deps=['flink-operator', 'cert-manager'],
+    labels=['platform'],
+)
+
+# ---- the two jobs --------------------------------------------------------
+# Same chart, twice. The generator stands in for the upstream system; the
+# pipeline is the thing this repo is actually about.
+for name, sql in [('generator', 'generator.sql'), ('pipeline', 'pipeline.sql')]:
+    helm_resource(
+        name,
+        '../charts/flink-job',
+        namespace=NS,
+        image_deps=['flink-sql-platform'],
+        image_keys=[('image.repository', 'image.tag')],
+        flags=[
+            '--values=../charts/flink-job/values-local.yaml',
+            '--set=sqlFile=%s' % sql,
+        ],
+        resource_deps=['flink-kubernetes-operator', 'kafka', 'create-checkpoint-bucket'],
+        labels=['jobs'],
+    )
+
+# The Flink web UI of the pipeline job. State size, checkpoint history and
+# alignment duration are all on it.
+k8s_resource(
+    new_name='pipeline-ui',
+    objects=[],
+    port_forwards=['8081:8081'],
+    resource_deps=['pipeline'],
+    labels=['jobs'],
+)

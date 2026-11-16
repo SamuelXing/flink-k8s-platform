@@ -1,0 +1,39 @@
+# EKS + S3 + MSK.
+#
+# bucket, roleArn and bootstrap come out of `terraform output`. Everything else
+# is the same shape as local, only bigger.
+
+image:
+  repository: ""         # <account>.dkr.ecr.<region>.amazonaws.com/flink-sql-platform
+  tag: ""                # an immutable tag, never `latest`
+  pullPolicy: IfNotPresent
+
+flink:
+  parallelism: 8
+  slotsPerTaskManager: 4
+  checkpointInterval: 60s
+
+checkpoints:
+  bucket: ""             # terraform output checkpoints_bucket
+  prefix: jobs
+  endpoint: ""           # empty: real S3
+  pathStyleAccess: false
+  accessKey: ""          # empty: IRSA, no static keys anywhere
+  secretKey: ""
+
+serviceAccount:
+  create: true
+  name: flink
+  annotations:
+    eks.amazonaws.com/role-arn: ""   # terraform output flink_irsa_role_arn
+
+kafka:
+  bootstrap: ""          # terraform output msk_bootstrap_brokers
+
+resources:
+  jobManager:
+    memory: 2048m
+    cpu: 1
+  taskManager:
+    memory: 4096m
+    cpu: 2

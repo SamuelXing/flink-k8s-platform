@@ -1,0 +1,33 @@
+# kind + Tilt + LocalStack + Strimzi.
+#
+# The Flink configuration is identical to prod except for three lines under
+# checkpoints: that is the point of this file.
+
+image:
+  tag: dev
+  pullPolicy: Never      # kind loads the image directly, never pulls
+
+flink:
+  parallelism: 2
+  slotsPerTaskManager: 2
+
+checkpoints:
+  bucket: flink-checkpoints
+  endpoint: http://localstack.flink-platform.svc.cluster.local:4566
+  pathStyleAccess: true
+  accessKey: test        # LocalStack accepts anything; these are not secrets
+  secretKey: test
+
+kafka:
+  bootstrap: kafka-kafka-bootstrap.flink-platform.svc.cluster.local:9092
+
+generator:
+  rowsPerSecond: 50
+
+resources:
+  jobManager:
+    memory: 1024m
+    cpu: 0.5
+  taskManager:
+    memory: 1536m
+    cpu: 0.5

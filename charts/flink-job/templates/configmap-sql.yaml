@@ -1,0 +1,14 @@
+# The job's SQL. It is not baked into the image on purpose: changing the
+# pipeline is a ConfigMap change plus a restart, not a rebuild and a push.
+#
+# `tpl` runs the .sql file through the template engine, so the bootstrap server
+# and topic names come from values.yaml instead of being hardcoded per cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "flink-job.fullname" . }}-sql
+  labels:
+    {{- include "flink-job.labels" . | nindent 4 }}
+data:
+  {{ .Values.sqlFile }}: |
+{{ tpl (.Files.Get (printf "sql/%s" .Values.sqlFile)) . | indent 4 }}

@@ -1,0 +1,22 @@
+# terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+tfplan
+
+# maven
+app/target/
+
+# tilt
+tilt_modules/
+.tiltbuild/
+
+# editors / os
+.idea/
+.vscode/
+*.iml
+.DS_Store

@@ -1,0 +1,84 @@
+# LocalStack stands in for S3 so the Flink config can say s3:// locally exactly
+# as it does in EKS. MinIO would also serve objects, but LocalStack also gives
+# real STS and IAM APIs, which is what the prod path actually uses.
+#
+# What this does NOT do: emulate EKS, MSK or VPC. Those are Pro features and,
+# for VPC/EKS, only mocked API responses. A terraform apply against them goes
+# green without proving the network would come up on real AWS, which is worse
+# than no signal. kind and Strimzi cover those locally instead.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: localstack
+  namespace: flink-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: localstack }
+  template:
+    metadata:
+      labels: { app: localstack }
+    spec:
+      containers:
+        - name: localstack
+          image: localstack/localstack:3.8
+          ports:
+            - containerPort: 4566
+          env:
+            - name: SERVICES
+              value: "s3,iam,sts"
+            - name: DEBUG
+              value: "0"
+            - name: PERSISTENCE
+              value: "0"
+          readinessProbe:
+            httpGet: { path: /_localstack/health, port: 4566 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { memory: 512Mi, cpu: 250m }
+            limits:   { memory: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: localstack
+  namespace: flink-platform
+spec:
+  selector: { app: localstack }
+  ports:
+    - name: edge
+      port: 4566
+      targetPort: 4566
+---
+# Creates the checkpoint bucket. In prod this is the terraform `checkpoints`
+# module instead, which is the one module that can also be applied here.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-checkpoint-bucket
+  namespace: flink-platform
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: awscli
+          image: amazon/aws-cli:2.17.0
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              value: test
+            - name: AWS_SECRET_ACCESS_KEY
+              value: test
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              until aws --endpoint-url http://localstack:4566 s3 ls >/dev/null 2>&1; do
+                echo "waiting for localstack..."; sleep 3
+              done
+              aws --endpoint-url http://localstack:4566 s3 mb s3://flink-checkpoints || true
+              aws --endpoint-url http://localstack:4566 s3 ls
