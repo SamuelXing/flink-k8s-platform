@@ -32,15 +32,17 @@ checkpoints:
   accessKey: ""
   secretKey: ""
 
+# Created by the Flink operator's chart (jobServiceAccount), once per
+# namespace. A job only names it. For IRSA, the role ARN annotation is set on
+# the operator release: jobServiceAccount.annotations.
 serviceAccount:
-  create: true
   name: flink
-  # Prod sets eks.amazonaws.com/role-arn here. That annotation is the whole of
-  # IRSA from the workload's side.
-  annotations: {}
 
 kafka:
   bootstrap: ""
+  # MSK with IAM auth: adds SASL_SSL + AWS_MSK_IAM to every Kafka table. The
+  # credentials are the pod's IRSA role, the same one that reaches S3.
+  iamAuth: false
   topics:
     orders: orders
     revenue: revenue_1m

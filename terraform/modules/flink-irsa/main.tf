@@ -79,6 +79,48 @@ data "aws_iam_policy_document" "checkpoints" {
   }
 }
 
+# MSK with IAM auth: the broker authorises every connect, read and write
+# against this policy. Without it the client connects and is then refused,
+# which surfaces in Flink as a timeout fetching topic metadata, not as an
+# authorisation error.
+locals {
+  # arn:aws:kafka:REGION:ACCOUNT:cluster/NAME/UUID  ->  .../topic/NAME/UUID/*
+  msk_topic_arns = "${replace(var.msk_cluster_arn, ":cluster/", ":topic/")}/*"
+  msk_group_arns = "${replace(var.msk_cluster_arn, ":cluster/", ":group/")}/*"
+}
+
+data "aws_iam_policy_document" "kafka" {
+  statement {
+    effect    = "Allow"
+    actions   = ["kafka-cluster:Connect", "kafka-cluster:DescribeCluster"]
+    resources = [var.msk_cluster_arn]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:WriteData",
+      # Creating topics is the topics Job's task; it runs as this same role.
+      "kafka-cluster:CreateTopic",
+    ]
+    resources = [local.msk_topic_arns]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["kafka-cluster:AlterGroup", "kafka-cluster:DescribeGroup"]
+    resources = [local.msk_group_arns]
+  }
+}
+
+resource "aws_iam_role_policy" "kafka" {
+  name   = "${var.role_name}-kafka"
+  role   = aws_iam_role.flink.id
+  policy = data.aws_iam_policy_document.kafka.json
+}
+
 resource "aws_iam_role_policy" "checkpoints" {
   name   = "${var.role_name}-checkpoints"
   role   = aws_iam_role.flink.id

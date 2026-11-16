@@ -1,24 +1,25 @@
 # -*- mode: Python -*-
 #
-# One command brings up the whole local stack:
-#
-#     make local-up      # creates the kind cluster, then runs `tilt up`
+#     make local-up                    # kind cluster, then `tilt up`
+#     KAFKA_BROKERS=3 make local-up    # three brokers; wants ~12 GB in Docker
 #
 # Layers, in dependency order:
-#     cert-manager      (the Flink operator's webhook needs it)
-#     Strimzi operator  -> Kafka cluster
+#     cert-manager      (the Flink operator's admission webhook needs it)
+#     Strimzi operator  -> Kafka + topics
 #     LocalStack        -> checkpoint bucket
 #     Flink operator    -> generator job, pipeline job
 #
 load('ext://helm_resource', 'helm_resource', 'helm_repo')
-load('ext://namespace', 'namespace_create')
 
 NS = 'flink-platform'
+BROKERS = int(os.getenv('KAFKA_BROKERS', '1'))
+RF = min(BROKERS, 3)
+MIN_ISR = max(1, RF - 1)
 
 allow_k8s_contexts('kind-flink-platform')
+update_settings(k8s_upsert_timeout_secs=600)
 
 # ---- image ---------------------------------------------------------------
-# Tilt rebuilds and reloads into kind on every change under app/.
 docker_build(
     'flink-sql-platform',
     context='../app',
@@ -26,7 +27,6 @@ docker_build(
     only=['pom.xml', 'src', 'Dockerfile'],
 )
 
-# ---- namespace -----------------------------------------------------------
 k8s_yaml('manifests/00-namespace.yaml')
 
 # ---- cert-manager --------------------------------------------------------
@@ -35,7 +35,7 @@ helm_resource(
     'cert-manager',
     'jetstack/cert-manager',
     namespace='cert-manager',
-    flags=['--create-namespace', '--version=v1.16.2', '--set=crds.enabled=true'],
+    flags=['--create-namespace', '--version=v1.21.3', '--set=crds.enabled=true'],
     resource_deps=['jetstack'],
     labels=['platform'],
 )
@@ -46,46 +46,61 @@ helm_resource(
     'strimzi-operator',
     'strimzi/strimzi-kafka-operator',
     namespace=NS,
-    flags=['--version=0.45.0', '--set=watchNamespaces={%s}' % NS],
+    flags=['--create-namespace', '--version=1.3.1'],
     resource_deps=['strimzi'],
     labels=['platform'],
 )
-k8s_yaml('manifests/20-kafka.yaml')
+kafka_yaml = str(read_file('manifests/20-kafka.yaml')) \
+    .replace('__BROKERS__', str(BROKERS)) \
+    .replace('__RF__', str(RF)) \
+    .replace('__MIN_ISR__', str(MIN_ISR))
+k8s_yaml(blob(kafka_yaml))
 k8s_resource(
     new_name='kafka',
-    objects=['dual-role:kafkanodepool', 'kafka:kafka', 'orders:kafkatopic', 'revenue-1m:kafkatopic'],
+    objects=[
+        'dual-role:kafkanodepool',
+        'kafka:kafka',
+        'orders:kafkatopic',
+        'revenue-1m:kafkatopic',
+    ],
     resource_deps=['strimzi-operator'],
     labels=['data'],
 )
 
-# ---- LocalStack ----------------------------------------------------------
+# ---- LocalStack (S3 only) ------------------------------------------------
 k8s_yaml('manifests/10-localstack.yaml')
 k8s_resource('localstack', port_forwards=['4566:4566'], labels=['data'])
-k8s_resource(
-    'create-checkpoint-bucket',
-    resource_deps=['localstack'],
-    labels=['data'],
-)
+k8s_resource('create-checkpoint-bucket', resource_deps=['localstack'], labels=['data'])
 
 # ---- Flink operator ------------------------------------------------------
+# archive.apache.org keeps every release; downloads.apache.org drops old ones,
+# which turns a pinned version into a 404 a few months later.
 helm_repo(
     'flink-operator',
-    'https://downloads.apache.org/flink/flink-kubernetes-operator-1.10.0/',
+    'https://archive.apache.org/dist/flink/flink-kubernetes-operator-1.16.1/',
     labels=['repos'],
 )
 helm_resource(
     'flink-kubernetes-operator',
     'flink-operator/flink-kubernetes-operator',
     namespace=NS,
-    flags=['--version=1.10.0'],
+    # The operator chart also creates the "flink" service account, role and
+    # binding that jobs run as. Nothing else in this repo creates them: a
+    # second owner of the same names is a Helm ownership conflict.
+    flags=['--create-namespace', '--version=1.16.1'],
     resource_deps=['flink-operator', 'cert-manager'],
     labels=['platform'],
 )
 
 # ---- the two jobs --------------------------------------------------------
 # Same chart, twice. The generator stands in for the upstream system; the
-# pipeline is the thing this repo is actually about.
-for name, sql in [('generator', 'generator.sql'), ('pipeline', 'pipeline.sql')]:
+# pipeline is what this repo is about. Kafka sits between them, so either can
+# be restarted without the other noticing.
+JOBS = [
+    ('generator', 'generator.sql', 1, 8082),
+    ('pipeline',  'pipeline.sql',  2, 8081),
+]
+for name, sql, parallelism, ui_port in JOBS:
     helm_resource(
         name,
         '../charts/flink-job',
@@ -95,17 +110,17 @@ for name, sql in [('generator', 'generator.sql'), ('pipeline', 'pipeline.sql')]:
         flags=[
             '--values=../charts/flink-job/values-local.yaml',
             '--set=sqlFile=%s' % sql,
+            '--set=flink.parallelism=%d' % parallelism,
         ],
         resource_deps=['flink-kubernetes-operator', 'kafka', 'create-checkpoint-bucket'],
         labels=['jobs'],
     )
-
-# The Flink web UI of the pipeline job. State size, checkpoint history and
-# alignment duration are all on it.
-k8s_resource(
-    new_name='pipeline-ui',
-    objects=[],
-    port_forwards=['8081:8081'],
-    resource_deps=['pipeline'],
-    labels=['jobs'],
-)
+    # The pods are created by the operator, not by Tilt, so Tilt cannot attach
+    # a port-forward to them. Forward the REST service the operator creates.
+    local_resource(
+        '%s-ui' % name,
+        serve_cmd='while true; do kubectl -n %s port-forward svc/%s-rest %d:8081 2>/dev/null; sleep 3; done' % (NS, name, ui_port),
+        resource_deps=[name],
+        links=['http://localhost:%d' % ui_port],
+        labels=['jobs'],
+    )

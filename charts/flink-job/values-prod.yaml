@@ -21,14 +21,9 @@ checkpoints:
   accessKey: ""          # empty: IRSA, no static keys anywhere
   secretKey: ""
 
-serviceAccount:
-  create: true
-  name: flink
-  annotations:
-    eks.amazonaws.com/role-arn: ""   # terraform output flink_irsa_role_arn
-
 kafka:
-  bootstrap: ""          # terraform output msk_bootstrap_brokers
+  bootstrap: ""          # terraform output msk_bootstrap_brokers (port 9098)
+  iamAuth: true
 
 resources:
   jobManager:

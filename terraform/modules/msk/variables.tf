@@ -31,12 +31,6 @@ variable "broker_storage_gb" {
   default = 500
 }
 
-variable "default_partitions" {
-  description = "Ceiling on Flink source parallelism. Raising it later means rebuilding topics."
-  type        = number
-  default     = 24
-}
-
 variable "retention_hours" {
   description = "How far back a job can be replayed from. This is the real recovery window."
   type        = number

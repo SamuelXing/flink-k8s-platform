@@ -18,14 +18,6 @@ resource "aws_security_group" "msk" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "Kafka TLS from EKS nodes"
-    from_port       = 9094
-    to_port         = 9094
-    protocol        = "tcp"
-    security_groups = [var.client_security_group_id]
-  }
-
-  ingress {
     description     = "Kafka IAM-authenticated from EKS nodes"
     from_port       = 9098
     to_port         = 9098
@@ -47,8 +39,7 @@ resource "aws_msk_cluster" "this" {
   cluster_name  = var.cluster_name
   kafka_version = var.kafka_version
 
-  # One broker per AZ. This is also the floor for replication factor 3, which
-  # the Flink sink's transactional writes depend on.
+  # One broker per AZ, which is also what replication factor 3 needs.
   number_of_broker_nodes = length(var.subnet_ids)
 
   broker_node_group_info {
@@ -88,14 +79,14 @@ resource "aws_msk_configuration" "this" {
   name           = "${var.cluster_name}-config"
   kafka_versions = [var.kafka_version]
 
-  # num.partitions is the single most consequential line here. A Flink source's
-  # parallelism can never exceed the partition count, and raising it later
-  # means rebuilding the topic, not restarting a job.
+  # Auto-creation is off, so a topic exists only because someone created it
+  # with an explicit partition count (docs/prod-deploy.md, step 5). That count
+  # is the ceiling on a Flink source's parallelism, and raising it later
+  # changes which partition every key lands in.
   server_properties = <<-PROPERTIES
     auto.create.topics.enable = false
     default.replication.factor = ${length(var.subnet_ids)}
     min.insync.replicas = 2
-    num.partitions = ${var.default_partitions}
     log.retention.hours = ${var.retention_hours}
   PROPERTIES
 }

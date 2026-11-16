@@ -6,20 +6,25 @@ statement about syntax and types, not about whether an EKS cluster comes up.
 ## What you can check without an AWS account
 
 ```sh
-make tf-fmt         # formatting
-make tf-validate    # syntax, types, module wiring, all 6 directories
-make tf-local-apply # really creates the bucket, against LocalStack
+make tf-fmt          # formatting
+make tf-validate     # syntax, types, module wiring, all 8 directories
+make tf-local-apply  # really creates the bucket, against LocalStack
+make tf-local-destroy
 ```
 
-`tf-local-apply` needs `tflocal`:
+`tf-local-apply` needs the local stack running under `tilt up`, which forwards
+LocalStack to `localhost:4566`. It applies `envs/local`, which is the
+`checkpoints` module and nothing else: bucket, versioning, encryption, public
+access block and lifecycle rule.
 
-```sh
-pipx install terraform-local
-```
+Only that module works this way. S3 is emulated properly by LocalStack; `vpc`,
+`eks` and `msk` are not, and an apply against their mocks would report success
+without creating anything real. IAM is not enforced either, so this says
+nothing about whether the policies in `flink-irsa` are right.
 
-Only the `checkpoints` module works this way. S3 is emulated properly by
-LocalStack; `vpc`, `eks` and `msk` are not, and an apply against their mocks
-would report success without creating anything real.
+`envs/local` pins AWS provider 5.80.0, older than prod. Newer providers wait
+for the lifecycle rule to read back with a field LocalStack 3.8 does not
+return, and time out with the rule already applied.
 
 ## What needs credentials
 
@@ -40,7 +45,7 @@ Rough us-west-2 monthly, if applied as written:
 | 3 × m7i.xlarge on demand | ~$440 |
 | NAT gateway (1) | ~$33 + data |
 | MSK 3 × kafka.m7g.large | ~$300 |
-| S3 + requests | small, until it isn't |
+| ECR, S3 + requests | small, until it isn't |
 | | **~$850/month before traffic** |
 
 Two things dominate the surprises:
@@ -61,5 +66,9 @@ Two things dominate the surprises:
 - `pipeline.max-parallelism` in the Helm values is 720. It is the job's
   lifetime parallelism ceiling and cannot be changed without discarding every
   existing savepoint. Decide it now, not later.
-- `num.partitions = 24` in the MSK config is the ceiling on Flink source
-  parallelism. Raising it later means rebuilding topics, not restarting a job.
+- Topic partition counts are chosen when the topics are created
+  (`docs/prod-deploy.md`, step 5). They are the ceiling on Flink source
+  parallelism, and raising one later moves every key to a different partition.
+- The checkpoint bucket never deletes anything by age, only superseded
+  versions. Leftovers from a job that no longer exists have to be removed by
+  deleting its prefix.

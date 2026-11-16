@@ -21,3 +21,16 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- define "flink-job.s3Base" -}}
 s3://{{ required "checkpoints.bucket is required" .Values.checkpoints.bucket }}/{{ .Values.checkpoints.prefix }}/{{ include "flink-job.fullname" . }}
 {{- end -}}
+
+{{/*
+Extra WITH-clause options for a Kafka table. Empty unless kafka.iamAuth is on.
+Used from the .sql files, right after the bootstrap servers line.
+*/}}
+{{- define "flink-job.kafkaSecurity" -}}
+{{- if .Values.kafka.iamAuth }}
+  'properties.security.protocol'                   = 'SASL_SSL',
+  'properties.sasl.mechanism'                      = 'AWS_MSK_IAM',
+  'properties.sasl.jaas.config'                    = 'software.amazon.msk.auth.iam.IAMLoginModule required;',
+  'properties.sasl.client.callback.handler.class'  = 'software.amazon.msk.auth.iam.IAMClientCallbackHandler',
+{{- end }}
+{{- end -}}

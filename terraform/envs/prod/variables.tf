@@ -86,11 +86,6 @@ variable "flink_service_account" {
   default     = "flink"
 }
 
-variable "kafka_default_partitions" {
-  type    = number
-  default = 24
-}
-
 variable "kafka_retention_hours" {
   type    = number
   default = 168

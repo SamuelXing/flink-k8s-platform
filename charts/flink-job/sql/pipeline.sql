@@ -7,7 +7,7 @@
 -- Rendered by Helm at install time: the bootstrap server and topic names
 -- come from values.yaml, so this file is the same on a laptop and on EKS.
 
-SET 'pipeline.name' = '{{ .Release.Name }}-pipeline';
+SET 'pipeline.name' = '{{ .Release.Name }}';
 
 CREATE TABLE orders (
   order_id    STRING,
@@ -20,8 +20,8 @@ CREATE TABLE orders (
 ) WITH (
   'connector'                    = 'kafka',
   'topic'                        = '{{ .Values.kafka.topics.orders }}',
-  'properties.bootstrap.servers' = '{{ .Values.kafka.bootstrap }}',
-  'properties.group.id'          = '{{ .Release.Name }}-pipeline',
+  'properties.bootstrap.servers' = '{{ required "kafka.bootstrap is required" .Values.kafka.bootstrap }}',{{ include "flink-job.kafkaSecurity" . }}
+  'properties.group.id'          = '{{ .Release.Name }}',
   'scan.startup.mode'            = 'latest-offset',
   'format'                       = 'json'
 );
@@ -35,7 +35,7 @@ CREATE TABLE revenue_1m (
 ) WITH (
   'connector'                    = 'kafka',
   'topic'                        = '{{ .Values.kafka.topics.revenue }}',
-  'properties.bootstrap.servers' = '{{ .Values.kafka.bootstrap }}',
+  'properties.bootstrap.servers' = '{{ required "kafka.bootstrap is required" .Values.kafka.bootstrap }}',{{ include "flink-job.kafkaSecurity" . }}
   'format'                       = 'json'
 );
 

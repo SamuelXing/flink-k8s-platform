@@ -3,33 +3,38 @@ package dev.samuelxing.flinkjob;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SqlRunnerTest {
 
-    @Test
-    void splitsPlainStatements() {
-        List<String> out = SqlRunner.split("SELECT 1; SELECT 2;");
-        assertEquals(2, out.size());
-        assertEquals("SELECT 1", out.get(0));
-        assertEquals("SELECT 2", out.get(1));
+    private static List<SqlRunner.Kind> kinds(String script) {
+        return SqlRunner.split(script).stream()
+                .map(SqlRunner::unwrap)
+                .map(SqlRunner::classify)
+                .collect(Collectors.toList());
     }
 
     @Test
-    void dropsLineCommentsButKeepsStatements() {
+    void splitsPlainStatements() {
+        assertEquals(List.of("SELECT 1", "SELECT 2"), SqlRunner.split("SELECT 1; SELECT 2;"));
+    }
+
+    @Test
+    void dropsLineAndBlockComments() {
         List<String> out = SqlRunner.split(
-                "-- a comment with a ; in it\nSELECT 1;\n-- trailing comment\n");
+                "-- a comment with a ; in it\nSELECT /* and ; here */ 1;\n-- trailing\n");
         assertEquals(1, out.size());
-        assertEquals("SELECT 1", out.get(0).trim());
+        assertEquals("SELECT   1", out.get(0));
     }
 
     @Test
     void semicolonInsideStringIsNotATerminator() {
         List<String> out = SqlRunner.split("SELECT 'a;b' AS x;");
-        assertEquals(1, out.size());
-        assertTrue(out.get(0).contains("'a;b'"));
+        assertEquals(List.of("SELECT 'a;b' AS x"), out);
     }
 
     @Test
@@ -40,20 +45,9 @@ class SqlRunnerTest {
     }
 
     @Test
-    void statementSetStaysOneStatement() {
-        String script =
-                "CREATE TABLE a (x INT) WITH ('connector'='datagen');\n"
-              + "EXECUTE STATEMENT SET\n"
-              + "BEGIN\n"
-              + "  INSERT INTO a SELECT 1;\n"
-              + "  INSERT INTO a SELECT 2;\n"
-              + "END;\n";
-        List<String> out = SqlRunner.split(script);
-        assertEquals(2, out.size(), "CREATE plus one statement set, got: " + out);
-        assertTrue(out.get(1).startsWith("EXECUTE STATEMENT SET"));
-        assertTrue(out.get(1).contains("INSERT INTO a SELECT 1"));
-        assertTrue(out.get(1).contains("INSERT INTO a SELECT 2"));
-        assertTrue(out.get(1).trim().endsWith("END"));
+    void commentMarkerInsideStringIsKept() {
+        assertEquals(List.of("SELECT '--not a comment' AS x"),
+                SqlRunner.split("SELECT '--not a comment' AS x;"));
     }
 
     @Test
@@ -62,7 +56,30 @@ class SqlRunnerTest {
     }
 
     @Test
-    void handlesTheRealPipelineShape() {
+    void setIsRecognisedAndParsed() {
+        String s = "SET 'pipeline.name' = 'demo-pipeline'";
+        assertEquals(SqlRunner.Kind.SET, SqlRunner.classify(s));
+        assertArrayEquals(new String[] {"pipeline.name", "demo-pipeline"}, SqlRunner.parseSet(s));
+    }
+
+    @Test
+    void statementSetWrapperIsUnwrappedIntoItsInserts() {
+        String script =
+                "CREATE TABLE a (x INT) WITH ('connector'='datagen');\n"
+              + "EXECUTE STATEMENT SET\n"
+              + "BEGIN\n"
+              + "  INSERT INTO a SELECT 1;\n"
+              + "  INSERT INTO a SELECT x FROM spend;\n"
+              + "END;\n";
+        assertEquals(
+                List.of(SqlRunner.Kind.DDL, SqlRunner.Kind.INSERT,
+                        SqlRunner.Kind.INSERT, SqlRunner.Kind.SKIP),
+                kinds(script));
+        assertEquals("INSERT INTO a SELECT 1", SqlRunner.unwrap(SqlRunner.split(script).get(1)));
+    }
+
+    @Test
+    void classifiesTheRealPipelineShape() {
         String script =
                 "SET 'pipeline.name' = 'x';\n"
               + "CREATE TABLE orders (\n"
@@ -71,7 +88,8 @@ class SqlRunnerTest {
               + ") WITH ('connector' = 'kafka');\n"
               + "INSERT INTO sink SELECT * FROM TABLE(TUMBLE(TABLE orders,"
               + " DESCRIPTOR(t), INTERVAL '1' MINUTE));\n";
-        List<String> out = SqlRunner.split(script);
-        assertEquals(3, out.size(), "got: " + out);
+        assertEquals(
+                List.of(SqlRunner.Kind.SET, SqlRunner.Kind.DDL, SqlRunner.Kind.INSERT),
+                kinds(script));
     }
 }

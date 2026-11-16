@@ -27,6 +27,14 @@ kind-down: ## Delete the local kind cluster
 local-up: kind-up ## Create the cluster and bring the whole stack up under Tilt
 	cd local && tilt up
 
+local-ci: ## Bring the stack up, wait until everything is ready, then exit
+	cd local && tilt ci --timeout 30m
+
+local-status: ## Job state, pods, and what is in the checkpoint bucket
+	kubectl -n flink-platform get flinkdeployment
+	kubectl -n flink-platform get pods
+	kubectl -n flink-platform exec deploy/localstack -- awslocal s3 ls s3://flink-checkpoints/jobs/ --recursive | tail -15
+
 local-down: ## Tear the Tilt stack down (leaves the cluster)
 	cd local && tilt down
 
@@ -34,7 +42,8 @@ local-down: ## Tear the Tilt stack down (leaves the cluster)
 lint: ## helm lint both value sets
 	helm lint $(CHART) -f $(CHART)/values-local.yaml
 	helm lint $(CHART) -f $(CHART)/values-prod.yaml \
-	  --set checkpoints.bucket=example --set image.repository=example --set image.tag=v1
+	  --set checkpoints.bucket=example --set image.repository=example \
+	  --set image.tag=v1 --set kafka.bootstrap=b-1.example:9098
 
 render-local: ## Render the chart as it would deploy locally
 	helm template pipeline $(CHART) -f $(CHART)/values-local.yaml
@@ -53,7 +62,7 @@ tf-fmt: ## Format all HCL
 	terraform fmt -recursive terraform
 
 tf-validate: ## Validate every module and the prod env
-	@set -e; for d in terraform/modules/*/ $(TF_PROD); do \
+	@set -e; for d in terraform/modules/*/ terraform/envs/*/; do \
 	  echo "--- $$d"; \
 	  terraform -chdir=$$d init -backend=false -input=false >/dev/null; \
 	  terraform -chdir=$$d validate; \
@@ -64,10 +73,13 @@ tf-plan: ## Plan prod. Needs real AWS credentials; read-only, creates nothing.
 	terraform -chdir=$(TF_PROD) plan
 
 ## The one module that can be applied for real without an AWS account.
-tf-local-apply: ## Apply the checkpoints module against LocalStack (needs tflocal)
-	cd terraform/modules/checkpoints && \
-	  tflocal init && \
-	  tflocal apply -auto-approve -var bucket_name=flink-checkpoints -var force_destroy=true
+## Needs the local stack up: Tilt forwards LocalStack to localhost:4566.
+tf-local-apply: ## Apply the checkpoints module against LocalStack
+	terraform -chdir=terraform/envs/local init -input=false
+	terraform -chdir=terraform/envs/local apply -auto-approve -input=false
 
-.PHONY: help test build kind-up kind-down local-up local-down lint \
-        render-local diff-envs tf-fmt tf-validate tf-plan tf-local-apply
+tf-local-destroy: ## Destroy what tf-local-apply created
+	terraform -chdir=terraform/envs/local destroy -auto-approve -input=false
+
+.PHONY: help test build kind-up kind-down local-up local-ci local-status local-down lint \
+        render-local diff-envs tf-fmt tf-validate tf-plan tf-local-apply tf-local-destroy

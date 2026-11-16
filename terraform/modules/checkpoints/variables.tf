@@ -3,20 +3,8 @@ variable "bucket_name" {
   type        = string
 }
 
-variable "job_prefix" {
-  description = "Key prefix the Flink jobs write under. Matches checkpoints.prefix in the Helm values."
-  type        = string
-  default     = "jobs"
-}
-
-variable "checkpoint_retention_days" {
-  description = "Days before objects under job_prefix/ expire. Covers checkpoints left by deleted jobs."
-  type        = number
-  default     = 30
-}
-
 variable "noncurrent_version_retention_days" {
-  description = "Days a superseded object version is kept. Flink overwrites constantly, so this drives most of the cost."
+  description = "Days a superseded or deleted object version is kept. This is the window in which a bad delete can be undone, and it drives most of the storage cost."
   type        = number
   default     = 7
 }

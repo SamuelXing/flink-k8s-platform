@@ -1,10 +1,8 @@
 # The checkpoint bucket.
 #
-# This is the one module in this repo that can be applied locally against
-# LocalStack, because S3 is emulated properly rather than mocked:
-#
-#     cd terraform/modules/checkpoints
-#     tflocal init && tflocal apply -var bucket_name=flink-checkpoints
+# This is the one module in this repo that can be applied without an AWS
+# account, because LocalStack emulates S3 properly rather than mocking it.
+# terraform/envs/local does exactly that: `make tf-local-apply`.
 #
 # vpc, eks and msk cannot. LocalStack answers their APIs with canned responses,
 # so an apply goes green without proving anything would come up on real AWS.
@@ -52,13 +50,26 @@ resource "aws_s3_bucket_public_access_block" "checkpoints" {
   restrict_public_buckets = true
 }
 
-# A running job rewrites checkpoints every interval. Without expiry, a job that
-# checkpoints 200 GB every minute leaves a petabyte behind in a week.
+# Only SUPERSEDED versions are expired here. Nothing is ever deleted by age.
+#
+# An age rule looks like the obvious way to clean up, and it destroys running
+# jobs: with incremental checkpoints the newest checkpoint still references SST
+# files under shared/ that were uploaded weeks ago. Expire those by age and the
+# job runs fine until the day it has to restore. The same rule would also eat
+# savepoints, which exist precisely to be kept.
+#
+# Flink deletes its own obsolete checkpoint files; versioning turns each of
+# those deletes into a noncurrent version, and this rule is what finally
+# removes them. Leftovers from a deleted job are removed by deleting its prefix
+# on purpose, not by a timer.
 resource "aws_s3_bucket_lifecycle_configuration" "checkpoints" {
   bucket = aws_s3_bucket.checkpoints.id
 
+  # Without this, versioning keeps every overwritten and deleted object forever.
+  depends_on = [aws_s3_bucket_versioning.checkpoints]
+
   rule {
-    id     = "expire-noncurrent-checkpoints"
+    id     = "expire-noncurrent-versions"
     status = "Enabled"
     filter {}
 
@@ -66,23 +77,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "checkpoints" {
       noncurrent_days = var.noncurrent_version_retention_days
     }
 
+    # A delete marker with no versions left behind it is pure clutter.
+    expiration {
+      expired_object_delete_marker = true
+    }
+
     abort_incomplete_multipart_upload {
       days_after_initiation = 1
-    }
-  }
-
-  # Savepoints are the thing you restore from after a bad deploy, so they are
-  # kept far longer than checkpoints and are never auto-deleted here.
-  rule {
-    id     = "expire-orphaned-checkpoints"
-    status = "Enabled"
-
-    filter {
-      prefix = "${var.job_prefix}/"
-    }
-
-    expiration {
-      days = var.checkpoint_retention_days
     }
   }
 }

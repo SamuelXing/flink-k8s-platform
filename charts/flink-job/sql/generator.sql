@@ -5,7 +5,7 @@
 -- Rendered by Helm at install time: the bootstrap server and topic names
 -- come from values.yaml, so this file is the same on a laptop and on EKS.
 
-SET 'pipeline.name' = '{{ .Release.Name }}-generator';
+SET 'pipeline.name' = '{{ .Release.Name }}';
 
 CREATE TABLE gen (
   seq        BIGINT,
@@ -15,9 +15,10 @@ CREATE TABLE gen (
 ) WITH (
   'connector'               = 'datagen',
   'rows-per-second'         = '{{ .Values.generator.rowsPerSecond }}',
-  'fields.seq.kind'         = 'sequence',
-  'fields.seq.start'        = '1',
-  'fields.seq.end'          = '9223372036854775807',
+  -- Random, not 'sequence': a datagen sequence materialises its whole range
+  -- up front, so an effectively endless one never gets as far as starting.
+  'fields.seq.min'          = '1',
+  'fields.seq.max'          = '999999999',
   'fields.cat_idx.min'      = '0',
   'fields.cat_idx.max'      = '4',
   'fields.amount.min'       = '1.00',
@@ -36,7 +37,7 @@ CREATE TABLE orders (
 ) WITH (
   'connector'                    = 'kafka',
   'topic'                        = '{{ .Values.kafka.topics.orders }}',
-  'properties.bootstrap.servers' = '{{ .Values.kafka.bootstrap }}',
+  'properties.bootstrap.servers' = '{{ required "kafka.bootstrap is required" .Values.kafka.bootstrap }}',{{ include "flink-job.kafkaSecurity" . }}
   'key.format'                   = 'raw',
   'key.fields'                   = 'order_id',
   'value.format'                 = 'json'

@@ -24,10 +24,13 @@ kafka:
 generator:
   rowsPerSecond: 50
 
+# Sized to fit two jobs, Kafka and the operators inside Docker Desktop's
+# default 8 GB. 1280m is close to the floor for a TaskManager with RocksDB:
+# below it, managed memory and the fixed overheads leave no task heap.
 resources:
   jobManager:
-    memory: 1024m
-    cpu: 0.5
+    memory: 768m
+    cpu: 0.25
   taskManager:
-    memory: 1536m
+    memory: 1280m
     cpu: 0.5

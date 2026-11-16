@@ -1,10 +1,4 @@
-# Everything the Helm chart needs. After an apply:
-#
-#   helm upgrade --install pipeline charts/flink-job \
-#     -f charts/flink-job/values-prod.yaml \
-#     --set checkpoints.bucket=$(terraform output -raw checkpoints_bucket) \
-#     --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=$(terraform output -raw flink_irsa_role_arn) \
-#     --set kafka.bootstrap=$(terraform output -raw msk_bootstrap_brokers)
+# Everything the deploy needs. docs/prod-deploy.md uses each of these.
 
 output "cluster_name" {
   value = module.eks.cluster_name
@@ -28,4 +22,8 @@ output "msk_bootstrap_brokers" {
 
 output "kubeconfig_command" {
   value = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks.cluster_name}"
+}
+
+output "ecr_repository_url" {
+  value = module.ecr.repository_url
 }

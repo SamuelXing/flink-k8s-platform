@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "flink-job.labels" . | nindent 4 }}
 spec:
-  image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+  image: {{ required "image.repository is required" .Values.image.repository }}:{{ required "image.tag is required" .Values.image.tag }}
   imagePullPolicy: {{ .Values.image.pullPolicy }}
   flinkVersion: {{ .Values.flink.version }}
   serviceAccount: {{ include "flink-job.serviceAccountName" . }}

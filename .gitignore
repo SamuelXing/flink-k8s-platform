@@ -1,6 +1,7 @@
 # terraform
 .terraform/
-.terraform.lock.hcl
+# lock files are committed for root modules (envs/), not for reusable ones
+terraform/modules/**/.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfvars

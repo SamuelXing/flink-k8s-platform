@@ -19,6 +19,10 @@ module "eks" {
   # service account to become an IAM principal.
   enable_irsa = true
 
+  # Since v20 of this module the creator gets NO access by default: without
+  # this line the apply succeeds and the very next kubectl is Unauthorized.
+  enable_cluster_creator_admin_permissions = true
+
   cluster_endpoint_public_access  = var.public_endpoint
   cluster_endpoint_private_access = true
 

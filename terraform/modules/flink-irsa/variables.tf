@@ -30,6 +30,11 @@ variable "checkpoints_bucket_arn" {
   description = "ARN of the checkpoint bucket."
 }
 
+variable "msk_cluster_arn" {
+  type        = string
+  description = "ARN of the MSK cluster the jobs read and write."
+}
+
 variable "job_prefix" {
   type        = string
   description = "Key prefix the role is allowed to touch."

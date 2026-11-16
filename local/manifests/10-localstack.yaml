@@ -1,11 +1,14 @@
-# LocalStack stands in for S3 so the Flink config can say s3:// locally exactly
-# as it does in EKS. MinIO would also serve objects, but LocalStack also gives
-# real STS and IAM APIs, which is what the prod path actually uses.
+# LocalStack, S3 only. It lets the Flink config say s3:// locally as it does in
+# EKS, and it is the same emulator `make tf-local-apply` runs the checkpoints
+# Terraform module against.
 #
-# What this does NOT do: emulate EKS, MSK or VPC. Those are Pro features and,
-# for VPC/EKS, only mocked API responses. A terraform apply against them goes
-# green without proving the network would come up on real AWS, which is worse
-# than no signal. kind and Strimzi cover those locally instead.
+# Any S3-compatible store would serve the runtime side equally well: the four
+# s3.* lines in values-local.yaml would be identical. LocalStack is here
+# because MinIO's community images are no longer published, and because one
+# emulator for both the runtime and the Terraform check is one less thing.
+#
+# It is NOT used for EKS, MSK or VPC. Those are mocked API responses: an apply
+# goes green without proving anything would come up on real AWS.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,7 +29,7 @@ spec:
             - containerPort: 4566
           env:
             - name: SERVICES
-              value: "s3,iam,sts"
+              value: "s3"
             - name: DEBUG
               value: "0"
             - name: PERSISTENCE
@@ -36,8 +39,8 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:
-            requests: { memory: 512Mi, cpu: 250m }
-            limits:   { memory: 1Gi }
+            requests: { memory: 384Mi, cpu: 100m }
+            limits:   { memory: 768Mi }
 ---
 apiVersion: v1
 kind: Service

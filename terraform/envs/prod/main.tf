@@ -46,11 +46,17 @@ module "eks" {
   tags = local.tags
 }
 
+module "ecr" {
+  source = "../../modules/ecr"
+
+  name = "${var.project}/flink-sql-platform"
+  tags = local.tags
+}
+
 module "checkpoints" {
   source = "../../modules/checkpoints"
 
   bucket_name = var.checkpoints_bucket_name
-  job_prefix  = var.job_prefix
 
   # Production keeps its checkpoints: a mistyped destroy should fail, not
   # silently delete the only copy of every job's state.
@@ -69,6 +75,7 @@ module "flink_irsa" {
   service_account_name = var.flink_service_account
 
   checkpoints_bucket_arn = module.checkpoints.bucket_arn
+  msk_cluster_arn        = module.msk.cluster_arn
   job_prefix             = var.job_prefix
 
   tags = local.tags
@@ -82,8 +89,7 @@ module "msk" {
   subnet_ids               = module.vpc.private_subnet_ids
   client_security_group_id = module.eks.node_security_group_id
 
-  default_partitions = var.kafka_default_partitions
-  retention_hours    = var.kafka_retention_hours
+  retention_hours = var.kafka_retention_hours
 
   tags = local.tags
 }
