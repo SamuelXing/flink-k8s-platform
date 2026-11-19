@@ -1,0 +1,81 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Flink AWS architecture</title><style>html,body{margin:0;background:#f8fafc}svg{display:block}</style><svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1550" viewBox="0 0 1100 1550"><defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#426182"/></marker></defs><g font-family="Arial, Helvetica, sans-serif">
+<rect x="0" y="0" width="1100" height="1550" rx="0" fill="#f8fafc" stroke="#f8fafc" stroke-width="2"/>
+<text x="40" y="53" font-size="36" fill="#17243b" font-weight="700">Flink on AWS</text>
+<text x="40" y="88" font-size="22" fill="#475569" font-weight="400">Deployment, Kubernetes placement, and runtime services</text>
+<rect x="40" y="120" width="320" height="112" rx="14" fill="#eef2ff" stroke="#a5b4fc" stroke-width="2"/>
+<text x="60" y="154" font-size="24" fill="#17243b" font-weight="700">Terraform</text>
+<text x="60" y="186" font-size="20" fill="#475569" font-weight="400">Creates VPC, EKS, MSK,</text>
+<text x="60" y="214" font-size="20" fill="#475569" font-weight="400">S3, ECR and IAM roles.</text>
+<rect x="410" y="120" width="310" height="112" rx="14" fill="#eef2ff" stroke="#a5b4fc" stroke-width="2"/>
+<text x="430" y="154" font-size="24" fill="#17243b" font-weight="700">Deployment + Helm</text>
+<text x="430" y="186" font-size="20" fill="#475569" font-weight="400">Read Terraform outputs;</text>
+<text x="430" y="214" font-size="20" fill="#475569" font-weight="400">submit job configuration.</text>
+<rect x="770" y="120" width="290" height="112" rx="14" fill="#eef2ff" stroke="#a5b4fc" stroke-width="2"/>
+<text x="790" y="154" font-size="24" fill="#17243b" font-weight="700">Docker build + push</text>
+<text x="790" y="186" font-size="20" fill="#475569" font-weight="400">Package the runner,</text>
+<text x="790" y="214" font-size="20" fill="#475569" font-weight="400">Flink and connectors.</text>
+<path d="M360 175 H410" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="40" y="285" width="1020" height="1050" rx="20" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/>
+<text x="65" y="323" font-size="26" fill="#17243b" font-weight="700">AWS</text>
+<text x="65" y="355" font-size="20" fill="#475569" font-weight="400">EKS and MSK use the VPC; ECR and S3 are regional services.</text>
+<rect x="65" y="380" width="970" height="620" rx="18" fill="#f8fbff" stroke="#93b5dc" stroke-width="2"/>
+<text x="85" y="416" font-size="25" fill="#17243b" font-weight="700">EKS Kubernetes cluster</text>
+<rect x="90" y="440" width="920" height="160" rx="14" fill="#eff6ff" stroke="#a7c7ed" stroke-width="2"/>
+<text x="110" y="473" font-size="21" fill="#235584" font-weight="700">CONTROL PLANE  ·  managed by AWS</text>
+<rect x="110" y="490" width="425" height="88" rx="14" fill="#ffffff" stroke="#a7c7ed" stroke-width="2"/>
+<text x="130" y="524" font-size="24" fill="#17243b" font-weight="700">Kubernetes API Server</text>
+<text x="130" y="556" font-size="20" fill="#475569" font-weight="400">FlinkDeployment + ConfigMap</text>
+<rect x="565" y="490" width="425" height="88" rx="14" fill="#ffffff" stroke="#a7c7ed" stroke-width="2"/>
+<text x="585" y="524" font-size="24" fill="#17243b" font-weight="700">Scheduler + controllers</text>
+<text x="585" y="556" font-size="20" fill="#475569" font-weight="400">etcd stores cluster state</text>
+<path d="M565 232 V260 H1045 V615 H550 V540 H535" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="340" y="277" font-size="19" fill="#334b68" font-weight="400">Submit resources</text>
+<rect x="90" y="665" width="920" height="310" rx="14" fill="#f0fdf4" stroke="#93cfac" stroke-width="2"/>
+<text x="110" y="701" font-size="21" fill="#21633d" font-weight="700">WORKER NODES  ·  EC2 managed node group</text>
+<rect x="110" y="730" width="300" height="110" rx="14" fill="#dcfce7" stroke="#5bab79" stroke-width="2"/>
+<text x="130" y="764" font-size="24" fill="#17243b" font-weight="700">Flink Operator Pod</text>
+<text x="130" y="796" font-size="20" fill="#475569" font-weight="400">Watches desired state;</text>
+<text x="130" y="824" font-size="20" fill="#475569" font-weight="400">coordinates job lifecycle.</text>
+<rect x="470" y="730" width="250" height="110" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="490" y="764" font-size="24" fill="#17243b" font-weight="700">JobManager Pods</text>
+<text x="490" y="796" font-size="20" fill="#475569" font-weight="400">Coordinate jobs</text>
+<text x="490" y="824" font-size="20" fill="#475569" font-weight="400">and checkpoints.</text>
+<rect x="760" y="730" width="230" height="110" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="780" y="764" font-size="24" fill="#17243b" font-weight="700">TaskManagers</text>
+<text x="780" y="796" font-size="20" fill="#475569" font-weight="400">Execute SQL</text>
+<text x="780" y="824" font-size="20" fill="#475569" font-weight="400">processing tasks.</text>
+<path d="M110 780 H78 V625 H323 V578" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="110" y="654" font-size="19" fill="#334b68" font-weight="400">Watch / update API</text>
+<path d="M778 578 V665" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)" stroke-dasharray="7 6"/>
+<text x="795" y="635" font-size="19" fill="#334b68" font-weight="400">Schedule Pods</text>
+<path d="M410 780 H470" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)"/>
+<path d="M720 780 H760" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="110" y="887" font-size="23" fill="#21633d" font-weight="700">The Operator runs here, not inside the EKS control plane.</text>
+<text x="110" y="925" font-size="20" fill="#475569" font-weight="400">generator and pipeline each run as a separate Flink application.</text>
+<rect x="90" y="1070" width="280" height="120" rx="14" fill="#fff7ed" stroke="#e6b980" stroke-width="2"/>
+<text x="110" y="1104" font-size="24" fill="#17243b" font-weight="700">MSK / Kafka</text>
+<text x="110" y="1136" font-size="20" fill="#475569" font-weight="400">orders → pipeline</text>
+<text x="110" y="1164" font-size="20" fill="#475569" font-weight="400">pipeline → revenue_1m</text>
+<rect x="410" y="1070" width="280" height="120" rx="14" fill="#fff7ed" stroke="#e6b980" stroke-width="2"/>
+<text x="430" y="1104" font-size="24" fill="#17243b" font-weight="700">S3</text>
+<text x="430" y="1136" font-size="20" fill="#475569" font-weight="400">Checkpoints, savepoints</text>
+<text x="430" y="1164" font-size="20" fill="#475569" font-weight="400">and HA metadata.</text>
+<rect x="730" y="1070" width="280" height="120" rx="14" fill="#fff7ed" stroke="#e6b980" stroke-width="2"/>
+<text x="750" y="1104" font-size="24" fill="#17243b" font-weight="700">ECR</text>
+<text x="750" y="1136" font-size="20" fill="#475569" font-weight="400">Container image registry;</text>
+<text x="750" y="1164" font-size="20" fill="#475569" font-weight="400">nodes pull job images.</text>
+<path d="M230 1000 V1070" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="245" y="1042" font-size="19" fill="#334b68" font-weight="400">Events</text>
+<path d="M550 1000 V1070" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="565" y="1042" font-size="19" fill="#334b68" font-weight="400">Save / restore</text>
+<path d="M870 1070 V1000" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="885" y="1042" font-size="19" fill="#334b68" font-weight="400">Pull images</text>
+<path d="M915 232 V260 H1077 V1130 H1010" fill="none" stroke="#426182" stroke-width="2.5" marker-end="url(#arrow)" stroke-dasharray="7 6"/>
+<rect x="90" y="1220" width="920" height="85" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+<text x="110" y="1254" font-size="24" fill="#17243b" font-weight="700">IAM role via IRSA</text>
+<text x="110" y="1286" font-size="20" fill="#475569" font-weight="400">The job service account gets AWS credentials for S3 and MSK access.</text>
+<text x="40" y="1380" font-size="21" fill="#475569" font-weight="700">ORDER DATA FLOW</text>
+<rect x="40" y="1400" width="1020" height="65" rx="14" fill="#eef2ff" stroke="#a5b4fc" stroke-width="2"/>
+<text x="60" y="1434" font-size="24" fill="#17243b" font-weight="700">Generator → Kafka orders → Flink pipeline → Kafka revenue_1m</text>
+<text x="40" y="1500" font-size="20" fill="#64748b" font-weight="400">Intended AWS architecture · AWS deployment has not been verified.</text>
+</g></svg></html>

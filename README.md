@@ -7,15 +7,66 @@ the image does not change, and the Flink configuration changes by four lines.
 Everything else that differs is infrastructure, kept where infrastructure
 belongs.
 
-```
-                    ┌──────────────────────────────┐
-  generator job ───▶│  orders topic  (6 partitions)│───▶ pipeline job ───▶ revenue_1m
-  datagen → Kafka   └──────────────────────────────┘     TUMBLE 1 min
-                                                          per category
+## Architecture
 
-  local   kind ·  Strimzi  ·  LocalStack (S3)  ·  Flink Kubernetes Operator
-  prod    EKS  ·  MSK      ·  S3 + IRSA        ·  Flink Kubernetes Operator
-```
+### Runtime data flow
+
+The chart is installed twice: `generator` simulates an upstream order service,
+and `pipeline` aggregates orders by category in one-minute event-time windows.
+Both are Flink jobs; a real order service can replace the generator.
+
+<a href="docs/diagrams/runtime-data-flow.png">
+  <img src="docs/diagrams/runtime-data-flow.png" alt="Runtime data flow" width="680">
+</a>
+
+[Vector diagram (SVG)](docs/diagrams/runtime-data-flow.svg) ·
+[HTML source](docs/diagrams/runtime-data-flow.html)
+
+Kafka retains the event streams; Flink performs the computation. Checkpoints
+preserve computation state and source positions together for recovery. The
+Kafka sink is currently at-least-once, so output records can be duplicated
+after recovery.
+
+### AWS deployment and control flow
+
+This diagram shows the intended AWS deployment, which has **not been applied
+or verified on AWS**. The diagram keeps the control plane, worker nodes, and AWS services in one
+view. Click the image to open it at full resolution.
+
+<a href="docs/diagrams/aws-architecture.png">
+  <img src="docs/diagrams/aws-architecture.png" alt="AWS deployment and control flow" width="600">
+</a>
+
+[Vector diagram (SVG)](docs/diagrams/aws-architecture.svg) ·
+[HTML source](docs/diagrams/aws-architecture.html)
+
+
+The **Flink Operator runs as a Pod on worker nodes**, alongside the workloads
+it manages. Its role is control and management, but it is not part of the
+AWS-managed EKS control plane. It watches the Kubernetes API and coordinates
+Flink deployment and upgrades; JobManagers and TaskManagers run the jobs.
+
+Terraform creates the infrastructure. Deployment commands explicitly pass its
+outputs (bucket name, broker addresses, image repository and role ARN) to
+Helm; there is no automatic Terraform-to-Helm synchronization. The job chart
+creates `FlinkDeployment` resources and SQL ConfigMaps. SQL is mounted into
+the job Pods as files, rather than baked into the image.
+
+### Local equivalents
+
+| Responsibility | Local development | AWS deployment |
+|---|---|---|
+| Kubernetes cluster | kind | EKS |
+| Kafka | Strimzi-managed Kafka in the cluster | MSK in the VPC, outside EKS |
+| Recovery storage | LocalStack S3 in the cluster | S3 |
+| Job management | Flink Kubernetes Operator | Flink Kubernetes Operator |
+| Job image | Built by Tilt and loaded into kind | Built and pushed to ECR |
+| AWS authentication | LocalStack test credentials | IAM role via IRSA |
+| Environment setup | kind and Tilt | Terraform, then deployment commands and Helm |
+
+`terraform/envs/local` is a separate exercise for the S3 `checkpoints` module,
+not the provisioner for the full local stack. Its default bucket is
+`tf-checkpoints-local`; the Tilt-managed Flink stack uses `flink-checkpoints`.
 
 ## The diff that matters
 
